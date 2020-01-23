@@ -1,6 +1,7 @@
 # Docgen
 
-Aim of this project is to practice, utilize and implement OOPS concepts with Python. 
+Aim of this project is to practice, utilize and implement OOPS concepts with Python.
+Date Created: JULY 2017
 
 ### Introduction
 Docgen CLI tool is built for generating API documentation from code.
