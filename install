@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+INSTALL_PATH="/usr/local/bin"
+#Check Python installation and version
+echo "Installing Docgen"
+echo "Checking if python exists"
+command -v python >/dev/null 2>&1 || { echo >&2 "Docgen requires python2.7 but it's not installed.  Aborting."; exit 1; }
+case "$(python --version 2>&1)" in
+    *" 2.7"*)
+#        echo "Fine!"
+        ;;
+    *)
+        echo "Python 2.7 is required"
+        ;;
+esac
+
+echo "Checking if docker installed and running"
+#Check if Docker Installed
+command -v docker >/dev/null 2>&1 || { echo >&2 "Docker not installed.  Please refer https://docs.docker.com/engine/installation/"; exit 1; }
+
+#Check if Docker Running
+docker ps >/dev/null 2>&1
+RETURN_CODE=$?;
+if [[ $RETURN_CODE != 0 ]]; then
+    echo "Docker is not currently running, please re-try installation after starting docker engine."
+    exit $RETURN_CODE;
+fi
+#cat /usr/local/lib/python2.7/site-packages/uninstall-docgen-files.txt | xargs rm -rf
+cat utils/old_docgen_remove.txt | xargs rm -rf
+
+if [[ :$PATH: == *:$INSTALL_PATH:* ]]; then
+    echo >/dev/null 2>&1
+else
+    echo "Please add $INSTALL_PATH on the path. then re-try installation"
+    exit $RETURN_CODE;
+fi
+
+mkdir -p /usr/local/bin/docgen_src
+
+python setup.py install
+echo "---------------------------------------------------------------------------------------------------"
+
+docgen status >/dev/null 2>&1
+
+DG_RETURN_CODE=$?;
+if [[ $DG_RETURN_CODE != 0 ]]; then
+    python setup.py log
+    echo "Unable to install Docgen, please contact admin."
+    exit $DG_RETURN_CODE;
+else
+    docgen -v
+    echo "Docgen Installed Succefully"
+fi

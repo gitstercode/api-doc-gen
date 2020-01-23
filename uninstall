@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#Check if Docker Installed
+command -v docker >/dev/null 2>&1 || { echo >&2 "Docker not installed.  Please refer https://docs.docker.com/engine/installation/"; exit 1; }
+
+#Check if Docker Running
+docker ps >/dev/null 2>&1
+RETURN_CODE=$?;
+if [[ $RETURN_CODE != 0 ]]; then
+    echo "Docker is not currently running, please re-try installation after starting docker engine."
+    exit $RETURN_CODE;
+fi
+
+## To Uninstall
+python setup.py uninstall
+#cat uninstall-docgen-files.txt | xargs rm -rf
+#echo "Docgen is been uninstalled"

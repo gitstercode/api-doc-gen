@@ -1,0 +1,31 @@
+{
+  "start": {
+    "required": {
+      "-d": "Application directory 'docgen start -d /path/to/directory"
+    },
+    "not_required": {
+      "-b": "PHP controller bootstrap path",
+      "-p": "Docgen server port"
+    },
+    "-h": "Start docgen's server 'docgen start -d /path/to/directory"
+  },
+  "stop": {
+    "-h": "Stop docgen server"
+  },
+  "status": {
+    "-h": "Server status, if its running or not"
+  },
+  "log": {
+    "-h": "Documentation logs while server running"
+  },
+  "json": {
+    "required": {
+      "-d": "Application directory 'docgen start -d /path/to/directory"
+    },
+    "not_required": {
+      "-b": "PHP controller bootstrap path",
+      "-o": "JSON output path"
+    },
+    "-h": "Output Swagger JSON in a file or stdout"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "docgen_version": "1.0",
+  "client_version": "1.0",
+  "server_version": "1.0",
+  "vendor": "swagger",
+  "language": "php",
+  "old_image": "cca20eda0581",
+  "new_image": "docgen-image",
+  "bootstrap": "",
+  "controller": "",
+  "id": "",
+  "port": ""
+}

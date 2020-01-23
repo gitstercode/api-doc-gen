@@ -1,0 +1,400 @@
+#!/usr/bin/env python
+"""Docgen Client for parsing and validating user input."""
+
+import ast
+import os
+import sys
+import json
+
+from docgen_src.config.templates import *
+from docgen_src.docgen_pkg.docgen_server import DocgenServer
+from docgen_src.utils.status_codes import status_codes
+from docgen_src.utils.logger import logger
+from docgen_src.setup import COMMANDS_JSON_PATH, CONFIG_PATH
+
+
+def get_help(command, commands_supported):
+    """
+    Fetches help string from docgen_commands.json
+    :return: tuple of command_help and dictionary of required and not-required arguments help.
+    """
+    help = ""
+    command_help = commands_supported.get(command).get("-h")
+    try:
+        req_args = commands_supported.get(command).get("required")
+    except AttributeError:
+        req_args = {}
+    try:
+        not_req_args = commands_supported.get(command).get("not_required")
+    except AttributeError:
+        not_req_args = {}
+
+    if req_args:
+        req_args = {key:str(value)+" [required]" for key, value in req_args.items()}
+
+    arg_help = {}
+
+    ## To Merge required and not_required argument dictionaries
+    if req_args and not_req_args:
+        arg_help = req_args.copy()
+        arg_help.update(not_req_args)
+
+    return command_help, arg_help
+
+def get_version():
+    """
+    :return: dictionary of docgen versions
+    """
+    config = Config()
+    client_version = config.get_config().get("client_version")
+    server_version = config.get_config().get("server_version")
+    docgen_version = config.get_config().get("docgen_version")
+    response = {"client_version": client_version, "server_version": server_version, "docgen_version": docgen_version}
+    return response
+
+def validate_input(user_input):
+    """
+    Custom Command Line parser for docgen
+    :user_input: list of command line arguments
+    :return: tuple of validated command and dictionary of validated parameters
+    """
+    commands_supported = None
+    with open(COMMANDS_JSON_PATH, 'r') as f:
+        commands_supported = json.load(f)
+
+    given_command = None
+    given_args = {}
+
+    ## Help Menu for Script
+    if len(user_input) == 1:
+        print(template_help_menu(commands_supported))
+        sys.exit(0)
+
+    ## Help Menu for Script with -h
+    if len(user_input) == 2:
+        if user_input[1] == "-h" or user_input[1] == "--help":
+            print(template_help_menu(commands_supported))
+            sys.exit(0)
+        elif user_input[1] == "-v" or user_input[1] == "--version" or user_input[1] == "-V":
+            versions = get_version()
+            print(template_version(**versions))
+            sys.exit(0)
+
+    ## Checks validity of command
+    if len(user_input) > 1 and user_input[1] in commands_supported:
+        given_command = user_input[1]
+    else:
+        print(template_no_command(user_input[1]))
+        sys.exit(1)
+
+    ## Help Menu for Commands
+    if len(user_input) == 3:
+        if user_input[2] == "-h" or user_input[2] == "--help":
+            command_help, arg_help = get_help(user_input[1], commands_supported)
+            print(template_command_help(user_input[1], command_help, arg_help))
+            sys.exit(0)
+        else:
+            pass
+
+    if len(user_input) == 2:
+        if len(commands_supported.get(given_command)) > 0:
+            args = commands_supported.get(given_command).get("required")
+            if args:
+                print(template_missing_option(user_input[1], args))
+                sys.exit(1)
+
+    if len(user_input) > 2 and given_command:
+        args = commands_supported.get(given_command)
+
+        #if len(args) == 0:
+         #   sys.exit(template_no_options_supported(user_input[1]))
+
+        if not(args.get("required", None) or args.get("not_required", None)):
+            print(template_no_options_supported(user_input[1]))
+            sys.exit(1)
+        try:
+            req_args = args.get("required").keys()
+            not_req_args = args.get("not_required", []).keys()
+        except AttributeError:
+            req_args = []
+            not_req_args = []
+
+        #req_args = args.get("required", [])
+        #not_req_args = args.get("not_required", [])
+
+        mandatoryArgsInList = []
+        all_args = req_args + not_req_args
+        for i in range(2, len(user_input)):
+            currentArg = user_input[i]
+
+            ## If -h is encountered, help menu of that command is returned
+            if currentArg == "-h" or currentArg == "--help":
+                command_help, arg_help = get_help(user_input[1], commands_supported)
+                print(template_command_help(user_input[1], command_help, arg_help))
+                sys.exit(0)
+            if user_input[i] and (i % 2) == 0:
+                if user_input[i] in all_args:
+                    if user_input[i] in req_args:
+                        mandatoryArgsInList.append(user_input[i])
+                else:
+                    print(template_no_such_option(given_command, user_input[i]))
+                    sys.exit(1)
+                i += 1
+                try:
+                    if user_input[i] and user_input[i] in all_args:
+                        print(template_missing_argument(given_command, currentArg))
+                        sys.exit(1)
+                    else:
+                        given_args[currentArg] = user_input[i]
+                except IndexError:
+                    print(template_missing_argument(given_command, currentArg))
+                    sys.exit(1)
+
+        remaining_args = set(req_args) - set(mandatoryArgsInList)
+        if (remaining_args):
+            print(template_missing_option(given_command, remaining_args))
+            sys.exit(1)
+
+    return given_command, given_args
+
+
+class Config(object):
+    """This class performs read and write operations on docgen_config.json"""
+    def __init__(self):
+        self.contents = None
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, 'r') as f:
+                self.contents = json.load(f)
+
+    def get_config(self):
+        return self.contents
+
+    def write(self, key, value):
+        self.contents[key] = value
+        with open(CONFIG_PATH, 'w') as f:
+            f.write(json.dumps(self.contents))
+
+    def remove(self, *args):
+        if self.contents:
+            for key in args:
+                value = self.contents.get(key)
+                if value:
+                    self.contents[key] = ""
+                    with open(CONFIG_PATH, 'w') as f:
+                        f.write(json.dumps(self.contents))
+
+
+class Commands(object):
+    """After parsing user input, this class validates the arguments and routes to partucular class in docgen server.
+    This class implements the various commands suported in docgen_commands.json file"""
+    def __init__(self):
+        self.config = Config()
+        self.config.remove("bootstrap")
+
+    def start(self,d,
+              p=None,
+              b=None):
+        try:
+            docgen_server = None
+
+            if d:
+                d = os.path.abspath(d)
+                if os.path.exists(d) is True:
+                    fileName = ""
+                    # Check for file
+                    if os.path.isfile(d):
+                        fileName = os.path.basename(d)
+                        appPath = os.path.dirname(d)
+                    else:
+                        appPath = d
+
+                    appPath = appPath.replace(" ", "\ ")
+
+                    if b:
+                        b = os.path.abspath(b)
+                        if os.path.isfile(b) is False:
+                            print("Given Constant file path %s doesn't exist" % b)
+                            sys.exit(1)
+                        else:
+                            b = b.replace(" ", "\ ")
+                            self.config.write("bootstrap", b)
+
+                    docgen_server = DocgenServer(self.config.get_config())
+                    docgen_server.set_mount_volumes(appPath)
+
+                    if p:
+                        docgen_server.set_port(p)
+
+                    if fileName:
+                        fileName = fileName.replace(" ", "\ ")
+                        docgen_server.set_filename(fileName)
+                else:
+                    print("Given path %s doesn't exist. Please check the path." % d)
+                    sys.exit(1)
+
+            if docgen_server:
+                docgen_server.start()
+
+                ## To check if server running
+                docgen_server1 = DocgenServer(self.config.get_config())
+                if docgen_server1.is_running():
+                    # new_config = docgen_server.get_config()
+                    self.config.write("controller", d)
+                    port = self.config.get_config().get("port")
+
+                    localhostLink = 'https://localhost.com:%s' % port
+                    directory = '%s' % d
+                    print('Documentation path: %s\nServer started on %s'%(directory, localhostLink))
+                else:
+                    raise Exception("602")
+            else:
+                raise Exception("602")
+
+        except Exception, e:
+            s = str(e)
+            #logger.error(status_codes.get(s))
+            if s == "611":
+                print(status_codes.get(s))
+            else:
+                print(status_codes.get(s, s))
+                print("Please check if Mounts denied by docker.")
+
+    def stop(self):
+        try:
+            if self.config.get_config().get("id"):
+                docgen_server = DocgenServer(self.config.get_config())
+                response = docgen_server.stop()
+                if response:
+                    self.config.remove("id", "port", "d")
+                    print("Server stopped")
+                else:
+                    print("Not able to stop server, please contact admin")
+            else:
+                print("No server is running.")
+        except Exception, e:
+            s = str(e)
+            print(status_codes.get(s, s))
+
+    def status(self):
+        try:
+            docgen_server = DocgenServer(self.config.get_config())
+            response = docgen_server.is_running()
+
+            if response is True:
+                port = self.config.get_config().get("port")
+                controller = self.config.get_config().get("controller")
+                print("Documentation path: %s\nServer running at https://localhost.com:%s"%(controller, port))
+            else:
+                print("Server not running")
+        except Exception, e:
+            s = str(e)
+            print(status_codes.get(s, s))
+
+    def log(self):
+        try:
+            docgen_server = DocgenServer(self.config.get_config())
+            response = docgen_server.is_running()
+
+            if response is True:
+                print("Hit CTRL C to abort")
+                docgen_server = DocgenServer(self.config.get_config())
+                docgen_server.log()
+            else:
+                print("Server not running")
+        except Exception, e:
+            s = str(e)
+            print(status_codes.get(s, s))
+
+    def json(self, d,
+             b=None,
+             o=None):
+        try:
+            docgen_server = None
+            if d:
+                d = os.path.abspath(d)
+                if os.path.exists(d) is True:
+                    fileName = ""
+                    # Check for file
+                    if os.path.isfile(d):
+                        fileName = os.path.basename(d)
+                        appPath = os.path.dirname(d)
+                    else:
+                        appPath = d
+
+                    appPath = appPath.replace(" ", "\ ")
+
+                    if b:
+                        b = os.path.abspath(b)
+                        if os.path.isfile(b) is False:
+                            print("Given Constant file path %s doesn't exist" % b)
+                            sys.exit(1)
+                        else:
+                            b = b.replace(" ", "\ ")
+                            self.config.write("bootstrap", b)
+
+                    docgen_server = DocgenServer(self.config.get_config())
+                    docgen_server.set_mount_volumes(appPath)
+
+                    if fileName:
+                        fileName = fileName.replace(" ", "\ ")
+                        docgen_server.set_filename(fileName)
+                else:
+                    print("Given path %s doesn't exist. Please check the path." % d)
+                    sys.exit(1)
+
+            output = ""
+            fileNameOut = ""
+            if o:
+                o = os.path.abspath(o)  # Gets Absolute path if given path is relative
+                if os.path.isdir(o):
+                    output = o
+                else:
+                    parentDir = '/'.join(o.split('/')[0:-1])
+                    if parentDir:
+                        if os.path.exists(parentDir):
+                            output = os.path.dirname(o)
+                            fileNameOut = os.path.basename(o)
+                        else:
+                            print("Given outpath path doesn't exist.")
+                            sys.exit(1)
+                    # If only filename is given
+                    else:
+                        output = os.getcwd()
+                        fileNameOut = o
+
+            stdout = None
+            if docgen_server:
+                stdout = docgen_server.json()
+
+            if output:
+                if fileNameOut:
+                    fName = fileNameOut
+                else:
+                    fName = "swagger.json"
+                print(stdout[1])
+                with open(fName, 'w') as fo:
+                    fo.write(stdout[0])
+                print("JSON File generated in %s/%s" % (output, fName))
+
+            else:
+                print(stdout[1])
+                print(stdout[0])
+
+        except Exception, e:
+            s = str(e)
+            print(status_codes.get(s, s))
+
+    def update(self):
+        pass
+
+if __name__ == "__main__":
+    user_input = sys.argv
+    valid_command, valid_args = validate_input(user_input)
+
+    command = Commands()
+    args = {key[1:]: value for key, value in valid_args.items()}
+    try:
+        command.__getattribute__(valid_command)(**args)
+    except Exception, e:
+        logger.error(e)
+        print(e)
